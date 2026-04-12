@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Category, Product, ProductImage, ProductCategory } from '../../database/schemas';
+import { CategoriesGateway } from './categories.gateway';
 
 @Injectable()
 export class CategoriesService {
@@ -9,6 +10,7 @@ export class CategoriesService {
     @InjectModel('Category') private categoryModel: Model<Category>,
     @InjectModel('Product') private productModel: Model<Product>,
     @InjectModel('ProductImage') private productImageModel: Model<ProductImage>,
+    private categoriesGateway: CategoriesGateway,
   ) {}
 
   async findAll() {
@@ -182,6 +184,21 @@ export class CategoriesService {
     }
 
     const category = await this.categoryModel.create(payload);
+    
+    // Broadcast the creation event in real-time
+    try {
+      if (payload.parentId) {
+        // Subcategory was created
+        this.categoriesGateway.broadcastSubcategoryCreated(category, payload.parentId.toString());
+      } else {
+        // Main category was created
+        this.categoriesGateway.broadcastCategoryUpdate(category);
+      }
+    } catch (error) {
+      // Log but don't fail the creation if broadcasting fails
+      console.error('Error broadcasting category update:', error);
+    }
+    
     return category;
   }
 
@@ -217,6 +234,15 @@ export class CategoriesService {
       if (!category) {
         throw new NotFoundException('Category not found');
       }
+      
+      // Broadcast the update event in real-time
+      try {
+        this.categoriesGateway.broadcastCategoryUpdate(category);
+      } catch (error) {
+        // Log but don't fail the update if broadcasting fails
+        console.error('Error broadcasting category update:', error);
+      }
+      
       return category;
     } catch (error: any) {
       if (error?.code === 11000) {
@@ -243,45 +269,84 @@ export class CategoriesService {
       return { message: 'Categories already exist', count: existingCount };
     }
 
-    const categories = [
+    const mainCategories = [
       {
-        name: 'Skincare',
-        slug: 'skincare',
-        description: 'Skincare products for healthy and glowing skin',
-        type: ProductCategory.SKINCARE,
+        name: 'Beauty',
+        slug: 'beauty',
+        description: 'Skincare, Makeup, Haircare and beauty products',
+        type: ProductCategory.BEAUTY,
         displayOrder: 1,
+        isMainCategory: true,
       },
       {
-        name: 'Haircare',
-        slug: 'haircare',
-        description: 'Haircare products for beautiful and healthy hair',
-        type: ProductCategory.HAIRCARE,
+        name: 'Pharmacy',
+        slug: 'pharmacy',
+        description: 'Medications, Supplements and wellness products',
+        type: ProductCategory.PHARMACY,
         displayOrder: 2,
+        isMainCategory: true,
       },
       {
-        name: 'Makeup',
-        slug: 'makeup',
-        description: 'Makeup products for all your beauty needs',
-        type: ProductCategory.MAKEUP,
+        name: 'Groceries',
+        slug: 'groceries',
+        description: 'Food, Beverages and pantry items',
+        type: ProductCategory.GROCERIES,
         displayOrder: 3,
+        isMainCategory: true,
       },
       {
-        name: 'Organic',
-        slug: 'organic',
-        description: 'Natural and organic beauty products',
-        type: ProductCategory.ORGANIC,
+        name: 'Clothes & Shoes',
+        slug: 'clothes-shoes',
+        description: 'Apparel, Footwear and fashion items',
+        type: ProductCategory.CLOTHES_SHOES,
         displayOrder: 4,
+        isMainCategory: true,
       },
       {
-        name: 'Herbal',
-        slug: 'herbal',
-        description: 'Herbal beauty products with natural ingredients',
-        type: ProductCategory.HERBAL,
+        name: 'Essentials',
+        slug: 'essentials',
+        description: 'Home, Kitchen and daily essentials',
+        type: ProductCategory.ESSENTIALS,
         displayOrder: 5,
+        isMainCategory: true,
       },
     ];
 
-    const created = await this.categoryModel.insertMany(categories);
-    return { message: 'Categories seeded successfully', count: created.length, categories: created };
+    const created = await this.categoryModel.insertMany(mainCategories);
+    return { message: 'Main categories seeded successfully', count: created.length, categories: created };
+  }
+
+  async findMainCategories() {
+    const mainCategories = await this.categoryModel
+      .find({ isMainCategory: true, isActive: true })
+      .sort({ displayOrder: 1 })
+      .lean();
+
+    const categoryIds = mainCategories.map((category) => category._id);
+
+    const children = await this.categoryModel
+      .find({
+        parentId: { $in: categoryIds },
+        isActive: true,
+      })
+      .sort({ displayOrder: 1 })
+      .lean();
+
+    const childrenByParentId = children.reduce<Record<string, any[]>>((acc, child) => {
+      const key = child.parentId?.toString();
+      if (!key) {
+        return acc;
+      }
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(child);
+      return acc;
+    }, {});
+
+    return mainCategories.map((category) => ({
+      ...category,
+      children: childrenByParentId[category._id.toString()] || [],
+    }));
   }
 }

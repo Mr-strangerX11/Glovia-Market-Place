@@ -318,6 +318,7 @@ export class AdminController {
   }
 
   @Put('settings/announcement')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update announcement bar' })
   updateAnnouncement(@Body() dto: UpdateAnnouncementDto, @CurrentUser() user: any) {
     return this.adminService.updateAnnouncementBar(dto, { userId: user?._id?.toString() || user?.id, username: user?.email || user?.username });

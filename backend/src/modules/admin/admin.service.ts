@@ -1076,44 +1076,59 @@ export class AdminService {
   }
 
   async updateAnnouncementBar(data: { enabled?: boolean; message?: string; backgroundColor?: string; textColor?: string }, user?: { userId?: string, username?: string }) {
-    const prev = await this.settingModel.findOne({ key: 'announcementBar' }).lean();
-    const enabled = typeof data.enabled === 'boolean' ? data.enabled : true;
-    const message = data.message ?? '';
-    const updateValue = JSON.stringify({
-      enabled,
-      message,
-      backgroundColor: data.backgroundColor || '#FFD700',
-      textColor: data.textColor || '#000000'
-    });
-    // Versioning: Save previous version if exists
-    if (prev) {
-      const lastVersion = await this.settingVersionModel.find({ key: 'announcementBar' }).sort({ version: -1 }).limit(1).lean();
-      const nextVersion = lastVersion.length > 0 ? lastVersion[0].version + 1 : 1;
-      await this.settingVersionModel.create({
-        key: 'announcementBar',
-        value: prev.value,
-        userId: user?.userId,
-        username: user?.username,
-        version: nextVersion
+    try {
+      const prev = await this.settingModel.findOne({ key: 'announcementBar' }).lean();
+      const enabled = typeof data.enabled === 'boolean' ? data.enabled : true;
+      const message = data.message ?? '';
+      const updateValue = JSON.stringify({
+        enabled,
+        message,
+        backgroundColor: data.backgroundColor || '#FFD700',
+        textColor: data.textColor || '#000000'
       });
+      
+      // Versioning: Save previous version if exists
+      if (prev) {
+        const lastVersion = await this.settingVersionModel.find({ key: 'announcementBar' }).sort({ version: -1 }).limit(1).lean();
+        const nextVersion = lastVersion && lastVersion.length > 0 ? lastVersion[0].version + 1 : 1;
+        await this.settingVersionModel.create({
+          key: 'announcementBar',
+          value: prev.value,
+          userId: user?.userId,
+          username: user?.username,
+          version: nextVersion
+        });
+      }
+      
+      const updated = await this.settingModel.findOneAndUpdate(
+        { key: 'announcementBar' },
+        {
+          key: 'announcementBar',
+          value: updateValue
+        },
+        { upsert: true, new: true }
+      ).lean();
+      
+      // Create audit log
+      try {
+        await this.auditLogModel.create({
+          action: 'update',
+          entity: 'announcementBar',
+          userId: user?.userId,
+          username: user?.username,
+          before: prev ? prev.value : '',
+          after: updateValue
+        });
+      } catch (auditError) {
+        console.error('Failed to create audit log:', auditError);
+        // Don't fail the update if audit logging fails
+      }
+      
+      return updated;
+    } catch (error: any) {
+      console.error('Error updating announcement bar:', error);
+      throw new BadRequestException(`Failed to update announcement bar: ${error.message}`);
     }
-    const updated = await this.settingModel.findOneAndUpdate(
-      { key: 'announcementBar' },
-      {
-        key: 'announcementBar',
-        value: updateValue
-      },
-      { upsert: true, new: true }
-    ).lean();
-    await this.auditLogModel.create({
-      action: 'update',
-      entity: 'announcementBar',
-      userId: user?.userId,
-      username: user?.username,
-      before: prev ? prev.value : '',
-      after: updateValue
-    });
-    return updated;
   }
 
   async getAnnouncementBar() {

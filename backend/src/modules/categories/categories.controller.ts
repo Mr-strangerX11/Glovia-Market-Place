@@ -105,6 +105,22 @@ export class CategoriesController {
     return result;
   }
 
+  @Post('subcategory')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR, UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create subcategory (vendor/admin can create)' })
+  async createSubcategory(@Body() dto: any) {
+    return this.categoriesService.create(dto);
+  }
+
+  @Get('main')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  @ApiOperation({ summary: 'Get main categories only' })
+  async getMainCategories() {
+    return this.categoriesService.findMainCategories();
+  }
+
   @Post('seed')
   @Public()
   @HttpCode(200)
