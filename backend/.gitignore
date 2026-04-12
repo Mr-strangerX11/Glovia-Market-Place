@@ -1,0 +1,6 @@
+node_modules/
+.env
+.env.*
+python-services/otp-auth/.env
+.vercel
+.env*.local
