@@ -2,11 +2,13 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Banner } from '../../database/schemas/banner.schema';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class BannersService {
   constructor(
     @InjectModel(Banner.name) private bannerModel: Model<Banner>,
+    private realtimeService: RealtimeService,
   ) {}
 
   async findAll() {
@@ -29,7 +31,15 @@ export class BannersService {
 
   async create(createBannerDto: any) {
     const banner = new this.bannerModel(createBannerDto);
-    return banner.save();
+    const savedBanner = await banner.save();
+    
+    // Emit real-time event
+    this.realtimeService.emitBannerCreated({
+      id: savedBanner._id,
+      ...savedBanner.toObject(),
+    });
+
+    return savedBanner;
   }
 
   async update(id: string, updateBannerDto: any) {
@@ -41,6 +51,13 @@ export class BannersService {
     if (!banner) {
       throw new NotFoundException('Banner not found');
     }
+
+    // Emit real-time event
+    this.realtimeService.emitBannerUpdate({
+      id: banner._id,
+      ...banner.toObject(),
+    });
+
     return banner;
   }
 
@@ -49,6 +66,10 @@ export class BannersService {
     if (!banner) {
       throw new NotFoundException('Banner not found');
     }
+
+    // Emit real-time event
+    this.realtimeService.emitBannerDeleted(id);
+
     return { message: 'Banner deleted successfully' };
   }
 }

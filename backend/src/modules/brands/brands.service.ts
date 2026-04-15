@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Brand, Product, ProductImage, OrderItem } from '../../database/schemas';
 import { CreateBrandDto, UpdateBrandDto } from './dto/brand.dto';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class BrandsService {
@@ -11,6 +12,7 @@ export class BrandsService {
     @InjectModel('Product') private productModel: Model<Product>,
     @InjectModel('ProductImage') private productImageModel: Model<ProductImage>,
     @InjectModel('OrderItem') private orderItemModel: Model<OrderItem>,
+    private realtimeService: RealtimeService,
   ) {}
 
   // Public: Get all brands
@@ -115,18 +117,26 @@ export class BrandsService {
   async createBrand(dto: CreateBrandDto) {
     const slug = dto.slug || dto.name.toLowerCase().replace(/\s+/g, '-');
 
-    return this.brandModel.create({
+    const brand = await this.brandModel.create({
       name: dto.name,
       slug,
       description: dto.description,
       logo: dto.logo,
       isActive: true,
     });
+
+    // Emit real-time event
+    this.realtimeService.emitBrandCreated({
+      id: brand._id,
+      ...brand.toObject(),
+    });
+
+    return brand;
   }
 
   // Admin: Update brand
   async updateBrand(id: string, dto: UpdateBrandDto) {
-    return this.brandModel.findByIdAndUpdate(
+    const brand = await this.brandModel.findByIdAndUpdate(
       id,
       {
         name: dto.name,
@@ -137,11 +147,28 @@ export class BrandsService {
       },
       { new: true }
     );
+
+    if (brand) {
+      // Emit real-time event
+      this.realtimeService.emitBrandUpdate({
+        id: brand._id,
+        ...brand.toObject(),
+      });
+    }
+
+    return brand;
   }
 
   // Admin: Soft delete brand (deactivate)
   async deleteBrand(id: string) {
-    return this.brandModel.findByIdAndUpdate(id, { isActive: false }, { new: true });
+    const brand = await this.brandModel.findByIdAndUpdate(id, { isActive: false }, { new: true });
+
+    if (brand) {
+      // Emit real-time event
+      this.realtimeService.emitBrandDeleted(id);
+    }
+
+    return brand;
   }
 
   // Admin: Hard delete brand (only if no products)
@@ -152,7 +179,14 @@ export class BrandsService {
       throw new Error('Cannot delete brand with associated products');
     }
 
-    return this.brandModel.findByIdAndDelete(id);
+    const brand = await this.brandModel.findByIdAndDelete(id);
+
+    if (brand) {
+      // Emit real-time event
+      this.realtimeService.emitBrandDeleted(id);
+    }
+
+    return brand;
   }
 
   // Admin: Get brand analytics for dashboard

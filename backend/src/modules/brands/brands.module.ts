@@ -4,10 +4,12 @@ import { BrandsService } from './brands.service';
 import { BrandsController } from './brands.controller';
 import { BrandSchema, ProductSchema, ProductImageSchema, OrderItemSchema } from '../../database/schemas';
 import { AuditLogModule } from '../auditlog/auditlog.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
     AuditLogModule,
+    RealtimeModule,
     MongooseModule.forFeature([
       { name: 'Brand', schema: BrandSchema },
       { name: 'Product', schema: ProductSchema },

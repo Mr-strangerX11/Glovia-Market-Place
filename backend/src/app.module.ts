@@ -28,6 +28,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { LoyaltyModule } from './modules/loyalty/loyalty.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
     WalletModule,
     SubscriptionsModule,
     FlashDealsModule,
+    RealtimeModule,
   ],
 })
 export class AppModule {}

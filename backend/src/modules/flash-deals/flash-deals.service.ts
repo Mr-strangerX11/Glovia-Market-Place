@@ -3,11 +3,13 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { FlashDeal } from '../../database/schemas';
 import { CreateFlashDealDto, UpdateFlashDealDto } from './dto/flash-deal.dto';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class FlashDealsService {
   constructor(
     @InjectModel('FlashDeal') private flashDealModel: Model<FlashDeal>,
+    private realtimeService: RealtimeService,
   ) {}
 
   // Public: Get active flash deals
@@ -100,7 +102,15 @@ export class FlashDealsService {
       createdBy: new Types.ObjectId(adminId),
     });
 
-    return await newDeal.save();
+    const savedDeal = await newDeal.save();
+
+    // Emit real-time event
+    this.realtimeService.emitFlashDealCreated({
+      id: savedDeal._id,
+      ...savedDeal.toObject(),
+    });
+
+    return savedDeal;
   }
 
   // Admin: Update flash deal
@@ -158,6 +168,12 @@ export class FlashDealsService {
       throw new NotFoundException('Flash deal not found');
     }
 
+    // Emit real-time event
+    this.realtimeService.emitFlashDealUpdate({
+      id: deal._id,
+      ...deal.toObject(),
+    });
+
     return deal;
   }
 
@@ -171,6 +187,9 @@ export class FlashDealsService {
     if (!deal) {
       throw new NotFoundException('Flash deal not found');
     }
+
+    // Emit real-time event
+    this.realtimeService.emitFlashDealDeleted(id);
 
     return { message: 'Flash deal deleted successfully' };
   }

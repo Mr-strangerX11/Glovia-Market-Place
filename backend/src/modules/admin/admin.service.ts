@@ -576,20 +576,47 @@ export class AdminService {
     const categoryIds = new Set<string>();
     const brandIds = new Set<string>();
     const vendorIds = new Set<string>();
+    // Name-based sets for human-friendly CSV columns
+    const categoryNames = new Set<string>();
+    const brandNames = new Set<string>();
+    const vendorEmails = new Set<string>();
 
     for (const row of rows) {
       if (row.sku) skus.add(this.sanitize(row.sku));
       if (row.slug) slugs.add(this.sanitize(row.slug));
-      if (row.categoryId && Types.ObjectId.isValid(row.categoryId)) categoryIds.add(row.categoryId);
-      if (row.brandId && Types.ObjectId.isValid(row.brandId)) brandIds.add(row.brandId);
-      if (row.vendorId && Types.ObjectId.isValid(row.vendorId)) vendorIds.add(row.vendorId);
+
+      // category: accept ObjectId or name string
+      const catVal = row.categoryId || row.category || '';
+      if (catVal && Types.ObjectId.isValid(catVal)) {
+        categoryIds.add(catVal);
+      } else if (catVal) {
+        categoryNames.add(catVal.toLowerCase().trim());
+      }
+
+      // brand: accept ObjectId or name string
+      const brandVal = row.brandId || row.brand || '';
+      if (brandVal && Types.ObjectId.isValid(brandVal)) {
+        brandIds.add(brandVal);
+      } else if (brandVal) {
+        brandNames.add(brandVal.toLowerCase().trim());
+      }
+
+      // vendor: accept ObjectId or email string
+      const vendorVal = row.vendorId || row.vendor || '';
+      if (vendorVal && Types.ObjectId.isValid(vendorVal)) {
+        vendorIds.add(vendorVal);
+      } else if (vendorVal) {
+        vendorEmails.add(vendorVal.toLowerCase().trim());
+      }
     }
 
-    // Batch DB lookups instead of per-row queries
+    // Batch DB lookups (by ID)
     const lookups = await Promise.all([
       this.productModel.find({ sku: { $in: [...skus] } }, { sku: 1 }).lean(),
       this.productModel.find({ slug: { $in: [...slugs] } }, { slug: 1 }).lean(),
-      this.categoryModel.find({ _id: { $in: [...categoryIds] } }, { _id: 1 }).lean(),
+      categoryIds.size > 0
+        ? this.categoryModel.find({ _id: { $in: [...categoryIds] } }, { _id: 1 }).lean()
+        : Promise.resolve([]),
       brandIds.size > 0
         ? this.brandModel.find({ _id: { $in: [...brandIds] } }, { _id: 1 }).lean()
         : Promise.resolve([]),
@@ -598,37 +625,142 @@ export class AdminService {
         : Promise.resolve([]),
     ]);
 
-    const [existingSkus, existingSlugs, categories, brands, vendors] = lookups;
+    const [existingSkus, existingSlugs, categoriesById, brandsById, vendorsById] = lookups;
+
+    // Name-based lookups: fetch ALL categories/brands so we can do partial matching + good error messages
+    const [allCategoriesList, brandsByName, vendorsByEmail] = await Promise.all([
+      this.categoryModel.find({}, { _id: 1, name: 1 }).lean(),
+      brandNames.size > 0
+        ? this.brandModel.find(
+            { name: { $in: [...brandNames].map(n => new RegExp(`^${n}$`, 'i')) } },
+            { _id: 1, name: 1 }
+          ).lean()
+        : Promise.resolve([]),
+      vendorEmails.size > 0
+        ? this.userModel.find(
+            { role: UserRole.VENDOR, email: { $in: [...vendorEmails].map(e => new RegExp(`^${e}$`, 'i')) } },
+            { _id: 1, email: 1 }
+          ).lean()
+        : Promise.resolve([]),
+    ]);
 
     const takenSkus = new Set(existingSkus.map((p: any) => p.sku));
     const takenSlugs = new Set(existingSlugs.map((p: any) => p.slug));
-    const validCategoryIds = new Set(categories.map((c: any) => c._id.toString()));
-    const validBrandIds = new Set(brands.map((b: any) => b._id.toString()));
-    const validVendorIds = new Set(vendors.map((v: any) => v._id.toString()));
+
+    // Build full category map (all categories in DB) for exact + partial matching
+    const allCategoryNameMap = new Map<string, string>(); // lowercase name → id
+    for (const c of allCategoriesList as any[]) {
+      allCategoryNameMap.set(c.name.toLowerCase().trim(), c._id.toString());
+    }
+
+    // categoryNameMap: resolves CSV category names → ObjectId (exact first, then partial)
+    const categoryNameMap = new Map<string, string>();
+    for (const inputName of categoryNames) {
+      // 1. Exact case-insensitive match
+      if (allCategoryNameMap.has(inputName)) {
+        categoryNameMap.set(inputName, allCategoryNameMap.get(inputName)!);
+        continue;
+      }
+      // 2. Partial match: DB name contains input, or input contains DB name
+      //    Prefer the longest DB name that is a substring of input (handles abbreviations)
+      let bestMatch: string | null = null;
+      let bestLen = 0;
+      for (const [catName, catId] of allCategoryNameMap) {
+        if (catName.includes(inputName) || inputName.includes(catName)) {
+          if (catName.length > bestLen) {
+            bestLen = catName.length;
+            bestMatch = catId;
+          }
+        }
+      }
+      if (bestMatch) {
+        categoryNameMap.set(inputName, bestMatch);
+      }
+    }
+
+    const validCategoryIds = new Set([
+      ...categoriesById.map((c: any) => c._id.toString()),
+      ...[...categoryNameMap.values()],
+    ]);
+    const validBrandIds = new Set([
+      ...brandsById.map((b: any) => b._id.toString()),
+      ...brandsByName.map((b: any) => b._id.toString()),
+    ]);
+    const validVendorIds = new Set([
+      ...vendorsById.map((v: any) => v._id.toString()),
+      ...vendorsByEmail.map((v: any) => v._id.toString()),
+    ]);
+
+    const brandNameMap = new Map<string, string>();
+    for (const b of brandsByName as any[]) {
+      brandNameMap.set(b.name.toLowerCase(), b._id.toString());
+    }
+    const vendorEmailMap = new Map<string, string>();
+    for (const v of vendorsByEmail as any[]) {
+      vendorEmailMap.set(v.email.toLowerCase(), v._id.toString());
+    }
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
         const { name, slug, description, price, compareAtPrice, sku, stockQuantity,
-          categoryId, brandId, vendorId, ingredients, benefits, howToUse,
-          isFeatured, isBestSeller, isNew, tags, imageUrls } = row;
+          ingredients, benefits, howToUse,
+          isFeatured, isBestSeller, isNew, tags, imageUrls,
+          discountPercentage } = row;
 
-        if (!name || !slug || !description || !sku || !categoryId) {
-          throw new Error('Missing required fields: name, slug, description, sku, categoryId');
+        // Resolve categoryId: ObjectId > name lookup
+        let resolvedCategoryId: string | null = null;
+        const catRaw = row.categoryId || row.category || '';
+        if (catRaw && Types.ObjectId.isValid(catRaw)) {
+          resolvedCategoryId = catRaw;
+        } else if (catRaw) {
+          resolvedCategoryId = categoryNameMap.get(catRaw.toLowerCase().trim()) || null;
+        }
+
+        // Resolve brandId: ObjectId > name lookup
+        let resolvedBrandId: string | null = null;
+        const brandRaw = row.brandId || row.brand || '';
+        if (brandRaw && Types.ObjectId.isValid(brandRaw)) {
+          resolvedBrandId = brandRaw;
+        } else if (brandRaw) {
+          resolvedBrandId = brandNameMap.get(brandRaw.toLowerCase().trim()) || null;
+        }
+
+        // Resolve vendorId: ObjectId > email lookup
+        let resolvedVendorId: string | null = null;
+        const vendorRaw = row.vendorId || row.vendor || '';
+        if (vendorRaw && Types.ObjectId.isValid(vendorRaw)) {
+          resolvedVendorId = vendorRaw;
+        } else if (vendorRaw) {
+          resolvedVendorId = vendorEmailMap.get(vendorRaw.toLowerCase().trim()) || null;
+        }
+
+        if (!name || !slug || !description || !sku) {
+          throw new Error('Missing required fields: name, slug, description, sku');
+        }
+        if (!resolvedCategoryId) {
+          const catDisplay = row.categoryId || row.category || '(none)';
+          const available = [...allCategoryNameMap.keys()]
+            .map(n => allCategoriesList.find((c: any) => c.name.toLowerCase().trim() === n) as any)
+            .filter(Boolean)
+            .map((c: any) => c.name)
+            .sort()
+            .join(', ');
+          throw new Error(`Category not found: "${catDisplay}". Available categories: ${available || 'none'}`);
         }
         if (isNaN(Number(price)) || Number(price) < 0) throw new Error('Invalid price');
-        if (isNaN(Number(stockQuantity)) || Number(stockQuantity) < 0) throw new Error('Invalid stockQuantity');
-        if (!Types.ObjectId.isValid(categoryId)) throw new Error(`Invalid categoryId: ${categoryId}`);
-        if (!validCategoryIds.has(categoryId)) throw new Error(`Category not found: ${categoryId}`);
-        if (brandId && !Types.ObjectId.isValid(brandId)) throw new Error(`Invalid brandId: ${brandId}`);
-        if (brandId && !validBrandIds.has(brandId)) throw new Error(`Brand not found: ${brandId}`);
-        if (vendorId && !Types.ObjectId.isValid(vendorId)) throw new Error(`Invalid vendorId: ${vendorId}`);
-        if (vendorId && !validVendorIds.has(vendorId)) throw new Error(`Vendor not found: ${vendorId}`);
+        if (stockQuantity && isNaN(Number(stockQuantity))) throw new Error('Invalid stockQuantity');
+        if (!validCategoryIds.has(resolvedCategoryId)) throw new Error(`Category not found: ${resolvedCategoryId}`);
+        if (resolvedBrandId && !validBrandIds.has(resolvedBrandId)) throw new Error(`Brand not found: ${resolvedBrandId}`);
+        if (resolvedVendorId && !validVendorIds.has(resolvedVendorId)) throw new Error(`Vendor not found: ${resolvedVendorId}`);
 
         const cleanSku = this.sanitize(sku);
         const cleanSlug = this.sanitize(slug);
         if (takenSkus.has(cleanSku)) throw new Error(`SKU already exists: ${sku}`);
         if (takenSlugs.has(cleanSlug)) throw new Error(`Slug already exists: ${slug}`);
+
+        const parseBool = (val: any) =>
+          val === true || String(val).toLowerCase() === 'true';
 
         const product = new this.productModel({
           name: this.sanitize(name),
@@ -636,25 +768,27 @@ export class AdminService {
           description: this.sanitize(description),
           price: Number(price),
           compareAtPrice: compareAtPrice ? Number(compareAtPrice) : undefined,
+          discountPercentage: discountPercentage ? Number(discountPercentage) : 0,
           sku: cleanSku,
           stockQuantity: Number(stockQuantity || 0),
-          categoryId: new Types.ObjectId(categoryId),
-          brandId: brandId ? new Types.ObjectId(brandId) : null,
-          vendorId: vendorId ? new Types.ObjectId(vendorId) : null,
+          categoryId: new Types.ObjectId(resolvedCategoryId),
+          brandId: resolvedBrandId ? new Types.ObjectId(resolvedBrandId) : null,
+          vendorId: resolvedVendorId ? new Types.ObjectId(resolvedVendorId) : null,
           ingredients: this.sanitize(ingredients),
           benefits: this.sanitize(benefits),
           howToUse: this.sanitize(howToUse),
-          isFeatured: isFeatured === true || isFeatured === 'true',
-          isBestSeller: isBestSeller === true || isBestSeller === 'true',
-          isNewProduct: isNew === true || isNew === 'true',
-          tags: Array.isArray(tags) ? tags : (tags ? String(tags).split(',').map((t: string) => t.trim()) : []),
+          isFeatured: parseBool(isFeatured),
+          isBestSeller: parseBool(isBestSeller),
+          isNewProduct: parseBool(isNew),
+          tags: Array.isArray(tags) ? tags : (tags ? String(tags).split(',').map((t: string) => t.trim()).filter(Boolean) : []),
           isActive: true,
         });
         const savedProduct = await product.save();
 
         // Create images if imageUrls provided
-        if (imageUrls && imageUrls.trim()) {
-          const urls = imageUrls.split(',').map((u: string) => u.trim()).filter(Boolean);
+        const rawImageUrls = imageUrls || row.images || '';
+        if (rawImageUrls && String(rawImageUrls).trim()) {
+          const urls = String(rawImageUrls).split(',').map((u: string) => u.trim()).filter(Boolean);
           if (urls.length > 0) {
             const imageDocuments = urls.map((url: string, index: number) => ({
               productId: savedProduct._id,
