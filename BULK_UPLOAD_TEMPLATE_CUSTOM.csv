@@ -1,0 +1,8 @@
+Product Name,Slug,Description,Price (NRP),Discount (%),Stock Quantity,Size/Volume,SKU,Category,Sub-Category,Brand,Vendor,Product Images,Product Flags,Featured Product,New Arrival
+"Himalaya Herbals Cleansing Milk","himalaya-cleansing-milk","Gentle cleansing milk for all skin types","350","10","100","200ml","HIMALAYA-MILK-001","Beauty","Skincare","Himalaya","MM cosmetics","https://example.com/img1.jpg,https://example.com/img2.jpg","skincare,mild","true","true"
+"Mamaearth Vitamin C Face Wash","mamaearth-vit-c-wash","Natural vitamin C face wash for brightening","430","5","50","100ml","MAMAEARTH-VC-001","Beauty","Face Wash","Mamaearth","MM cosmetics","https://example.com/img3.jpg","natural,brightening","true","false"
+"Paracetamol 500mg","paracetamol-500mg","Pain and fever relief tablet","25","0","200","Pack of 10","PARA-500-001","Pharmacy","Pain Relief","","","https://example.com/img4.jpg","medicine,tablet","false","false"
+"Basmati Rice Premium","basmati-rice-premium","Premium long grain basmati rice","250","15","500","1kg","BASMATI-1KG-001","Groceries","Rice","","","https://example.com/img5.jpg","organic,premium","true","false"
+"Cotton T-Shirt","cotton-tshirt-blue","100% cotton comfortable t-shirt","400","20","75","M-XL","TSHIRT-COTTON-001","Clothes & Shose","T-Shirts","","","https://example.com/img6.jpg","casual,cotton","false","true"
+"Hand Sanitizer 500ml","hand-sanitizer-500ml","Effective hand sanitizer with aloe vera","120","10","300","500ml","SANITIZER-500-001","Essentials","Hygiene","","","https://example.com/img7.jpg","hygiene,sanitizer","false","false"
+

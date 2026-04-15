@@ -4,7 +4,7 @@
 
 This document describes the implementation of a dynamic category management system for the Glovia marketplace. The system allows admins, super admins, and vendors to:
 
-1. **Select from 5 predefined main categories**: Beauty, Pharmacy, Groceries, Clothes & Shoes, Essentials
+1. **Select from 5 predefined main categories**: Beauty, Pharmacy, Groceries, Clothes & Shose, Essentials
 2. **Create custom subcategories** under any main category
 3. **View real-time updates** across all dashboards and the home page when categories change
 
@@ -16,7 +16,7 @@ The system seeds 5 main categories when initialized:
 - **Beauty** - Skincare, Makeup, Haircare products
 - **Pharmacy** - Medications, Supplements, Wellness products
 - **Groceries** - Food, Beverages, Pantry items
-- **Clothes & Shoes** - Apparel, Footwear, Fashion items
+- **Clothes & Shose** - Apparel, Footwear, Fashion items
 - **Essentials** - Home, Kitchen, Daily essentials
 
 ### 2. Backend Changes
