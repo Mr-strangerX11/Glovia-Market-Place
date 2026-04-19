@@ -33,7 +33,7 @@ export class UsersService {
   async getProfile(userId: string) {
     const user = await this.userModel
       .findById(userId)
-      .select('id email phone firstName lastName role skinType profileImage isEmailVerified isPhoneVerified createdAt')
+      .select('id email phone firstName lastName role skinType profileImage vendorType vendorDescription vendorLogo isEmailVerified isPhoneVerified createdAt')
       .lean();
 
     if (!user) {
